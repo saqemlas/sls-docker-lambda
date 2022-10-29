@@ -1,0 +1,63 @@
+service: docker-lambda
+
+plugins:
+  - serverless-s3-cleaner
+  - serverless-iam-roles-per-function
+
+custom:
+  project: template
+  baseName: ${self:custom.project}-${self:service}-${self:provider.stage}
+  repo: ${param:repo, 'test'}
+  repoUri: ${ssm:/${self:custom.project}/${self:service}/${self:provider.stage}/${self:custom.repo}}
+  
+  serverless-s3-cleaner:
+    buckets:
+      - ${cf:${self:custom.baseName}.ServerlessDeploymentBucketName, ''}
+
+provider:
+  name: aws
+  region: ${opt:region, 'eu-west-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: ${self:custom.baseName}
+  deploymentBucket:
+    blockPublicAccess: true
+  ecr:
+    images:
+      test:
+        path: ./
+  memorySize: 128
+  timeout: 25
+  environment:
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+    NODE_OPTIONS: "--enable-source-maps"
+  logRetentionInDays: 7
+  iam:
+    role:
+      name: ${self:custom.baseName}-provider
+      statements:
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: 
+            - !Sub arn:aws:logs:${self:provider.region}:${AWS::AccountId}:log-group:/aws/lambda/*:log-stream:*
+
+functions:
+  hello:
+    image:
+      name: test
+    architecture: arm64
+    events:
+      - httpApi:
+          method: GET
+          path: /v1
+
+  world:
+    image: 
+      uri: ${self:custom.repoUri}
+    architecture: arm64
+    events:
+      - httpApi:
+          method: GET
+          path: /v2
